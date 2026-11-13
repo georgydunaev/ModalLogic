@@ -125,8 +125,22 @@ The `modallogic` Python package provides the following modular structure:
 - `verify_modal_invariance(model1, model2, bisim, formulas)`: Automated check of the Hennessy-Milner theorem.
 
 ### 4.5 Tableau Solver (`modallogic.tableau`)
-- `TableauSolver(system="K"|"T"|"S4"|"S5")`: Automated decision procedure.
-- `check_validity(formula) -> TableauResult`: Returns `is_valid=True` with proof step count, or `is_valid=False` with an extracted finite Kripke countermodel.
+- `TableauSolver(system="K"|"T"|"S4"|"S5"|"GL")`: Automated decision procedure.
+- `check_validity(formula) -> TableauResult`: Returns `is_valid=True` with constructive proof tree (`proof_tree`) and step count, or `is_valid=False` with an extracted finite Kripke countermodel satisfying system frame conditions.
+- `TableauResult.format_proof() -> str`: Human-readable derivation tree or countermodel summary.
+- `TableauResult.verify_countermodel(formula) -> bool`: Automated check that countermodel falsifies formula at counterworld and satisfies frame conditions.
+
+### 4.6 Provability Logic GL (`modallogic.provability`)
+- `axiom_gl()`, `axiom_4()`, `godel_second_incompleteness()`: GL axiom schemas and theorems.
+- `is_transitive(frame)`, `is_converse_well_founded(frame)`, `is_gl_frame(frame)`: Frame condition verification.
+- `gl_depth(frame, world) -> int`, `gl_frame_height(frame) -> int`: Converse well-founded rank and height.
+- `is_modalized(formula, var_name) -> bool`: Verifies that variable occurrences are boxed or diamonded.
+- `compute_fixed_point(formula, var_name) -> Formula`: De Jongh-Sambin fixed point calculation yielding unique `H` such that `GL |- H <-> A(H)`.
+
+### 4.7 Frame Correspondence (`modallogic.correspondence`)
+- Property checkers with failure witnesses: `check_reflexivity`, `check_transitivity`, `check_symmetry`, `check_seriality`, `check_euclideanness`, `check_converse_well_foundedness`.
+- Constructive correspondence theorems: `correspondence_theorem_t`, `correspondence_theorem_4`, `correspondence_theorem_b`, `correspondence_theorem_d`, `correspondence_theorem_5`, `correspondence_theorem_gl`.
+- `verify_frame_correspondence(frame, axiom_name)`: Validates equivalence between structural relational condition and modal axiom satisfaction.
 
 ---
 

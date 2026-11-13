@@ -1,7 +1,7 @@
 # [MODALLOGIC] Ticket TKT-010: Formalize Gödel-Löb Provability Logic (GL) in Modal Logic
 
 **Repository:** `ModalLogic`
-**Status:** `IN_PROGRESS`
+**Status:** `CLOSED`
 **Milestone:** `Provability Logic Systems`
 **Priority:** `HIGH`
 

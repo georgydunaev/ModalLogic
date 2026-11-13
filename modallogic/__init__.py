@@ -1,4 +1,4 @@
-"""ModalLogic package: Formal syntax, Kripke semantics, correspondence, bisimulation, and tableau proving."""
+"""ModalLogic package: Formal syntax, Kripke semantics, correspondence, provability, bisimulation, and tableau proving."""
 
 from .syntax import (
     Formula,
@@ -35,6 +35,18 @@ from .axioms import (
     axiom_cd,
     ModalSystem,
 )
+from .provability import (
+    godel_second_incompleteness,
+    is_transitive,
+    is_converse_well_founded,
+    is_gl_frame,
+    gl_depth,
+    gl_frame_height,
+    substitute,
+    is_modalized,
+    simplify_constants,
+    compute_fixed_point,
+)
 from .bisimulation import (
     is_bisimulation,
     compute_maximal_bisimulation,
@@ -45,6 +57,24 @@ from .bisimulation import (
 from .tableau import (
     TableauSolver,
     TableauResult,
+    TableauProofNode,
+    TableauBranch,
+    SignedFormula,
+)
+from .correspondence import (
+    check_reflexivity,
+    check_transitivity,
+    check_symmetry,
+    check_seriality,
+    check_euclideanness,
+    check_converse_well_foundedness,
+    correspondence_theorem_t,
+    correspondence_theorem_4,
+    correspondence_theorem_b,
+    correspondence_theorem_d,
+    correspondence_theorem_5,
+    correspondence_theorem_gl,
+    verify_frame_correspondence,
 )
 
 __all__ = [
@@ -77,6 +107,16 @@ __all__ = [
     "axiom_c4",
     "axiom_cd",
     "ModalSystem",
+    "godel_second_incompleteness",
+    "is_transitive",
+    "is_converse_well_founded",
+    "is_gl_frame",
+    "gl_depth",
+    "gl_frame_height",
+    "substitute",
+    "is_modalized",
+    "simplify_constants",
+    "compute_fixed_point",
     "is_bisimulation",
     "compute_maximal_bisimulation",
     "are_bisimilar",
@@ -84,4 +124,20 @@ __all__ = [
     "verify_modal_invariance",
     "TableauSolver",
     "TableauResult",
+    "TableauProofNode",
+    "TableauBranch",
+    "SignedFormula",
+    "check_reflexivity",
+    "check_transitivity",
+    "check_symmetry",
+    "check_seriality",
+    "check_euclideanness",
+    "check_converse_well_foundedness",
+    "correspondence_theorem_t",
+    "correspondence_theorem_4",
+    "correspondence_theorem_b",
+    "correspondence_theorem_d",
+    "correspondence_theorem_5",
+    "correspondence_theorem_gl",
+    "verify_frame_correspondence",
 ]
