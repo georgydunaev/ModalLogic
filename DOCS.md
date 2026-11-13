@@ -138,9 +138,69 @@ The `modallogic` Python package provides the following modular structure:
 - `compute_fixed_point(formula, var_name) -> Formula`: De Jongh-Sambin fixed point calculation yielding unique `H` such that `GL |- H <-> A(H)`.
 
 ### 4.7 Frame Correspondence (`modallogic.correspondence`)
-- Property checkers with failure witnesses: `check_reflexivity`, `check_transitivity`, `check_symmetry`, `check_seriality`, `check_euclideanness`, `check_converse_well_foundedness`.
-- Constructive correspondence theorems: `correspondence_theorem_t`, `correspondence_theorem_4`, `correspondence_theorem_b`, `correspondence_theorem_d`, `correspondence_theorem_5`, `correspondence_theorem_gl`.
+- Property checkers with failure witnesses: `check_reflexivity`, `check_transitivity`, `check_symmetry`, `check_seriality`, `check_euclideanness`, `check_confluence`, `check_directedness`, `check_well_foundedness`, `check_converse_well_foundedness`.
+- Constructive correspondence theorems: `correspondence_theorem_t`, `correspondence_theorem_4`, `correspondence_theorem_b`, `correspondence_theorem_d`, `correspondence_theorem_5`, `correspondence_theorem_c4`, `correspondence_theorem_gl`.
 - `verify_frame_correspondence(frame, axiom_name)`: Validates equivalence between structural relational condition and modal axiom satisfaction.
+- `AutomatedCorrespondenceChecker`: Automated verification of individual relational properties, modal axioms, and multi-axiom modal logic systems (S4, S5, K4, KD45, GL).
+
+### 4.8 Composable Frame Classes (`modallogic.frames`)
+- Relational property mixins:
+  - `ReflexiveFrameMixin`: Enforces `forall w, w R w`.
+  - `TransitiveFrameMixin`: Enforces `forall w, u, v: w R u and u R v implies w R v`.
+  - `SymmetricFrameMixin`: Enforces `forall w, u: w R u implies u R w`.
+  - `SerialFrameMixin`: Enforces `forall w, exists u: w R u`.
+  - `EuclideanFrameMixin`: Enforces `forall w, u, v: w R u and w R v implies u R v`.
+  - `ConfluentFrameMixin` / `DirectedFrameMixin`: Enforces Church-Rosser confluence: `forall w, u, v: w R u and w R v implies exists z: u R z and v R z`.
+  - `ConverseWellFoundedFrameMixin`: Enforces cycle-free finite DAGs for provability logic.
+  - `WellFoundedFrameMixin`: Enforces cycle-free finite orders.
+- Concrete composable frame classes:
+  - `KFrame`: Unrestricted relational frame.
+  - `KDFrame`: Serial frame for deontic logic.
+  - `TFrame` / `KTFrame`: Reflexive frame.
+  - `KBFrame`: Symmetric frame for Brouwerian logic.
+  - `K4Frame`: Transitive frame.
+  - `K45Frame`: Transitive euclidean frame.
+  - `KD45Frame`: Serial transitive euclidean frame for belief logic.
+  - `S4Frame`: Reflexive transitive preorder frame.
+  - `S5Frame`: Reflexive symmetric transitive euclidean equivalence frame.
+  - `GLFrame`: Transitive converse well-founded frame for provability logic.
+  - `ConfluentFrame` / `DirectedFrame`: Confluent frame for Lemmon confluence (C4).
+- Methods:
+  - `frame.validation_report() -> Dict`: Detailed report of satisfied and violated properties.
+  - `frame.validate()`: Enforces property satisfaction, raising `ValueError` on failure.
+  - `create_frame(system_name, worlds, relation, ...)`: Dynamic factory instantiating the corresponding composable frame class.
+
+### 4.9 Modal Distribution Tactics and Proof Rules (`modallogic.tactics`)
+- Distribution Tactics:
+  - `distribute_box_and(formula)`: Rewrites `[](A & B)` into `[]A & []B`.
+  - `distribute_dia_or(formula)`: Rewrites `<>(A | B)` into `<>A | <>B`.
+  - `factor_box_and(formula)`: Rewrites `[]A & []B` into `[](A & B)`.
+  - `factor_dia_or(formula)`: Rewrites `<>A | <>B` into `<>(A | B)`.
+  - `normalize_modal_distributions(formula)`: Applies recursive distribution transformations across the full AST.
+- Distribution Schemas:
+  - `box_and_distribution_schema()`: `[](p & q) <-> ([]p & []q)`.
+  - `dia_or_distribution_schema()`: `<>(p | q) <-> (<>p | <>q)`.
+  - `k_implication_distribution_schema()`: `[](p -> q) -> ([]p -> []q)`.
+  - `dia_implication_distribution_schema()`: `[](p -> q) -> (<>p -> <>q)`.
+  - `s4_deduction_schema()`, `s5_modal_collapse_schema()`, `gl_provability_schema()`.
+- Standardized Proof Rules and Deduction Engine:
+  - `DeductionStep`: Individual verified proof step with rule annotation and premises.
+  - `ModalDeduction`: Hilbert-style and tactic-style derivation verifier across modal logics.
+  - Unified proof generators:
+    - `prove_box_and_distribution(system)`: Derivation of Box distribution over conjunction.
+    - `prove_dia_or_distribution(system)`: Derivation of Diamond distribution over disjunction via duality.
+    - `prove_s4_preorder_theorems()`: Derivation of preorder reflexivity and transitivity.
+    - `prove_s5_modal_collapse()`: Derivation of modal collapse in S5.
+    - `prove_gl_transitivity()`: Derivation of transitivity (Axiom 4) in GL from Löb's axiom.
+
+### 4.10 Canonical Model Evaluations (`modallogic.canonical`)
+- `compute_subformulas(formula)`: Extracts all subformulas.
+- `SubformulaClosure(formulas)`: Subformula closure closed under single negation, verum, and falsum.
+- `CanonicalWorld`: World representation for maximally consistent sets.
+- `CanonicalModel`: Canonical model evaluating truth sets, Truth Lemma consistency, and frame conditions.
+- `construct_canonical_model(formulas, system)`: Constructs canonical models for K, T, K4, S4, S5, and GL with relational closures.
+- `model.verify_truth_lemma() -> Dict`: Checks `M, w |= psi iff psi in w`.
+- `model.verify_frame_conditions() -> Dict`: Validates that canonical frame satisfies system conditions (e.g. S4 preorder, S5 equivalence relation, GL strict DAG).
 
 ---
 

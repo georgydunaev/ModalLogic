@@ -23,6 +23,7 @@ from .axioms import (
     axiom_d,
     axiom_5,
     axiom_gl,
+    axiom_c4,
 )
 
 
@@ -110,6 +111,34 @@ def check_converse_well_foundedness(frame: KripkeFrame) -> Tuple[bool, Optional[
             if cycle is not None:
                 return False, cycle
     return True, None
+
+
+def check_confluence(frame: KripkeFrame) -> Tuple[bool, Optional[Tuple[Any, Any, Any]]]:
+    """Check whether frame is confluent (Church-Rosser / directed):
+    forall w, u, v: w R u and w R v implies exists z: u R z and v R z.
+    Returns (True, None) or (False, (w, u, v)).
+    """
+    for w in sorted(list(frame.worlds), key=lambda x: str(x)):
+        succ = sorted(list(frame.successors(w)), key=lambda x: str(x))
+        for i, u in enumerate(succ):
+            succ_u = frame.successors(u)
+            for v in succ[i:]:
+                succ_v = frame.successors(v)
+                if not (succ_u & succ_v):
+                    return False, (w, u, v)
+    return True, None
+
+
+def check_directedness(frame: KripkeFrame) -> Tuple[bool, Optional[Tuple[Any, Any, Any]]]:
+    """Alias for check_confluence."""
+    return check_confluence(frame)
+
+
+def check_well_foundedness(frame: KripkeFrame) -> Tuple[bool, Optional[List[Any]]]:
+    """Check whether frame is well-founded (no cycles on finite frames).
+    Returns (True, None) or (False, cycle_path).
+    """
+    return check_converse_well_foundedness(frame)
 
 
 def correspondence_theorem_t(frame: KripkeFrame) -> Dict[str, Any]:
@@ -400,6 +429,52 @@ def correspondence_theorem_gl(frame: KripkeFrame) -> Dict[str, Any]:
     }
 
 
+def correspondence_theorem_c4(frame: KripkeFrame) -> Dict[str, Any]:
+    """Frame correspondence theorem for Lemmon Confluence Axiom C4:
+    Frame F satisfies Axiom C4 (<>[]p -> []<>p) if and only if F is confluent (directed):
+    forall w, u, v: w R u and w R v implies exists z: u R z and v R z.
+    """
+    ax = axiom_c4("p")
+    is_conf, witness_triple = check_confluence(frame)
+
+    if is_conf:
+        return {
+            "property": "confluent",
+            "is_property_satisfied": True,
+            "is_axiom_valid": True,
+            "axiom": ax,
+            "witness": None,
+            "countermodel": None,
+            "counterworld": None,
+            "proof_explanation": (
+                "Frame is confluent. For any world w with w R u (satisfying []p) and w R v, "
+                "confluence guarantees a common successor z with u R z and v R z. Since u satisfies []p, "
+                "z satisfies p, so v satisfies <>p. Thus []<>p holds at w."
+            ),
+        }
+
+    w, u, v = witness_triple  # type: ignore
+    # Constructive countervaluation: V(p) = R(u) = {z | u R z}
+    u_succ = frame.successors(u)
+    valuation = {"p": set(u_succ)}
+    model = KripkeModel(frame, valuation)
+    return {
+        "property": "confluent",
+        "is_property_satisfied": False,
+        "is_axiom_valid": False,
+        "axiom": ax,
+        "witness": witness_triple,
+        "countervaluation": valuation,
+        "countermodel": model,
+        "counterworld": w,
+        "proof_explanation": (
+            f"Frame is not confluent: {w!r} R {u!r} and {w!r} R {v!r}, but {u!r} and {v!r} have no common successor. "
+            f"Setting V(p) = R({u!r}) ensures {u!r} satisfies []p (so {w!r} satisfies <>[]p), but no successor of {v!r} "
+            f"satisfies p, so {v!r} falsifies <>p and {w!r} falsifies []<>p."
+        ),
+    }
+
+
 def verify_frame_correspondence(frame: KripkeFrame, axiom_name: str) -> bool:
     """Verify correspondence between the relational property and semantic validity on the frame."""
     name = axiom_name.upper()
@@ -413,6 +488,8 @@ def verify_frame_correspondence(frame: KripkeFrame, axiom_name: str) -> bool:
         res = correspondence_theorem_d(frame)
     elif name == "5":
         res = correspondence_theorem_5(frame)
+    elif name in ("C4", "CONFLUENT", "DIRECTED"):
+        res = correspondence_theorem_c4(frame)
     elif name == "GL":
         res = correspondence_theorem_gl(frame)
     else:
@@ -434,3 +511,81 @@ def verify_frame_correspondence(frame: KripkeFrame, axiom_name: str) -> bool:
             return False
 
     return True
+
+
+class AutomatedCorrespondenceChecker:
+    """Automated registry and verification engine for modal frame correspondence theorems."""
+
+    AXIOM_THEOREMS = {
+        "T": correspondence_theorem_t,
+        "4": correspondence_theorem_4,
+        "B": correspondence_theorem_b,
+        "D": correspondence_theorem_d,
+        "5": correspondence_theorem_5,
+        "C4": correspondence_theorem_c4,
+        "CONFLUENT": correspondence_theorem_c4,
+        "DIRECTED": correspondence_theorem_c4,
+        "GL": correspondence_theorem_gl,
+    }
+
+    PROPERTY_CHECKERS = {
+        "reflexive": check_reflexivity,
+        "transitive": check_transitivity,
+        "symmetric": check_symmetry,
+        "serial": check_seriality,
+        "euclidean": check_euclideanness,
+        "confluent": check_confluence,
+        "directed": check_directedness,
+        "well_founded": check_well_foundedness,
+        "converse_well_founded": check_converse_well_foundedness,
+    }
+
+    SYSTEM_AXIOMS: Dict[str, List[str]] = {
+        "K": [],
+        "KD": ["D"],
+        "T": ["T"],
+        "KT": ["T"],
+        "KB": ["B"],
+        "K4": ["4"],
+        "K45": ["4", "5"],
+        "KD45": ["D", "4", "5"],
+        "S4": ["T", "4"],
+        "S5": ["T", "4", "5"],
+        "GL": ["GL"],
+        "C4": ["C4"],
+    }
+
+    @classmethod
+    def check_property(cls, frame: KripkeFrame, property_name: str) -> Tuple[bool, Optional[Any]]:
+        prop = property_name.lower()
+        if prop not in cls.PROPERTY_CHECKERS:
+            raise ValueError(f"Unknown property: {property_name}. Available: {list(cls.PROPERTY_CHECKERS.keys())}")
+        return cls.PROPERTY_CHECKERS[prop](frame)
+
+    @classmethod
+    def verify_axiom(cls, frame: KripkeFrame, axiom_name: str) -> Dict[str, Any]:
+        ax = axiom_name.upper()
+        if ax not in cls.AXIOM_THEOREMS:
+            raise ValueError(f"Unknown axiom: {axiom_name}. Available: {list(cls.AXIOM_THEOREMS.keys())}")
+        return cls.AXIOM_THEOREMS[ax](frame)
+
+    @classmethod
+    def verify_system(cls, frame: KripkeFrame, system_name: str) -> Dict[str, Any]:
+        sys_key = system_name.upper()
+        if sys_key not in cls.SYSTEM_AXIOMS:
+            raise ValueError(f"Unknown system: {system_name}. Available: {list(cls.SYSTEM_AXIOMS.keys())}")
+        axioms = cls.SYSTEM_AXIOMS[sys_key]
+        report: Dict[str, Any] = {
+            "system": sys_key,
+            "is_valid": True,
+            "axiom_results": {},
+            "failed_axioms": [],
+        }
+        for ax in axioms:
+            res = cls.verify_axiom(frame, ax)
+            report["axiom_results"][ax] = res
+            if not res["is_axiom_valid"]:
+                report["is_valid"] = False
+                report["failed_axioms"].append(ax)
+        return report
+

@@ -114,12 +114,20 @@ class KripkeFrame:
                         return False
         return True
 
+    def is_directed(self) -> bool:
+        """Alias for is_confluent (directed frame)."""
+        return self.is_confluent()
+
     def is_dense(self) -> bool:
         """Density condition (Axiom C4): forall w, u: w R u implies exists v: w R v and v R u."""
         for w, u in self.relation:
             if not (self.successors(w) & self.predecessors(u)):
                 return False
         return True
+
+    def is_well_founded(self) -> bool:
+        """A finite relation is well-founded iff it contains no cycles."""
+        return self.is_converse_well_founded()
 
     def is_converse_well_founded(self) -> bool:
         """On a finite frame with transitive relation, converse well-founded
