@@ -1,28 +1,75 @@
 # Basic Modal Logic Example
 
-This example demonstrates the basic concepts of modal logic, including necessity and possibility operators.
+This example demonstrates the core concepts of modal logic, including necessity and possibility operators, Kripke semantics, and theorem checking.
 
-## Example
+## Theoretical Overview
 
-Consider a simple modal logic system with the following definitions:
+Modal propositional logic extends classical propositional logic with two dual modal operators:
+- **Necessity Operator ([] or Box)**: Represents that a proposition is true in all accessible possible worlds.
+- **Possibility Operator (<> or Dia)**: Represents that a proposition is true in at least one accessible possible world.
+- **Duality**: `<>phi` is logically equivalent to `~[]~phi`, and `[]phi` is equivalent to `~<>~phi`.
 
-- **Necessity Operator (□)**: Represents that a statement is necessarily true.
-- **Possibility Operator (◇)**: Represents that a statement is possibly true.
+## Formal Representation in ModalLogic
 
-### Example Statement
+Formulas can be parsed directly from standard strings:
 
-- **Statement**: It is necessary that all birds can fly.
+```python
+from modallogic.syntax import parse_formula
 
-### Formal Representation
+# Necessity statement
+f1 = parse_formula("[]p")
 
-- **Formal Statement**: □(∀x, Bird(x) → Fly(x))
+# Distribution axiom K
+k_axiom = parse_formula("[](p -> q) -> ([]p -> []q)")
 
-### Explanation
+# Reflexivity axiom T
+t_axiom = parse_formula("[]p -> p")
+```
 
-- The necessity operator (□) indicates that the statement is necessarily true.
-- The universal quantifier (∀x) indicates that the statement applies to all birds.
-- The implication (→) indicates that if something is a bird, then it can fly.
+## Relational Evaluation on Kripke Models
 
-## Conclusion
+A Kripke model consists of a tuple `M = (W, R, V)`:
+- `W`: Set of possible worlds.
+- `R`: Binary accessibility relation on `W`.
+- `V`: Valuation assigning propositional variables to subsets of `W`.
 
-This example provides a basic understanding of how modal logic extends classical logic by introducing necessity and possibility operators.
+```python
+from modallogic.semantics import KripkeFrame, KripkeModel
+
+# Frame with two worlds where w0 accesses w1
+frame = KripkeFrame(worlds=["w0", "w1"], relation=[("w0", "w1")])
+
+# Valuation: p is true at w1
+model = KripkeModel(frame, valuation={"p": ["w1"]})
+
+# w0 can only see w1, and p holds at w1, hence []p is True at w0
+print(model.satisfies("w0", parse_formula("[]p")))  # True
+
+# But p does not hold at w0, so []p -> p is False at w0
+print(model.satisfies("w0", parse_formula("[]p -> p")))  # False
+```
+
+## Automated Theorem Proving with Semantic Tableaux
+
+To verify whether a formula is valid in a given modal system or extract an explicit countermodel:
+
+```python
+from modallogic.tableau import TableauSolver
+
+solver_k = TableauSolver(system="K")
+res = solver_k.check_validity(parse_formula("[](p -> q) -> ([]p -> []q)"))
+print(f"Valid in K: {res.is_valid}")  # True
+
+# Axiom T is invalid in K, but valid in T
+print(f"Axiom T valid in K: {solver_k.check_validity(parse_formula('[]p -> p')).is_valid}")  # False
+
+solver_t = TableauSolver(system="T")
+print(f"Axiom T valid in T: {solver_t.check_validity(parse_formula('[]p -> p')).is_valid}")  # True
+```
+
+## Interactive Executable Demos
+
+Run the following scripts in `examples/`:
+- `python3 examples/kripke_frame_verification.py`: Frame condition validation.
+- `python3 examples/bisimulation_demo.py`: Maximal bisimulation calculation and quotient models.
+- `python3 examples/tableau_prover_demo.py`: Automated modal tableau prover and countermodel extraction.
