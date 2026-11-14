@@ -16,14 +16,42 @@ from modallogic.provability import (
     axiom_4,
     godel_second_incompleteness,
     is_transitive,
+    is_irreflexive,
     is_converse_well_founded,
     is_gl_frame,
+    verify_gl_frame_condition,
     gl_depth,
     gl_frame_height,
     substitute,
     is_modalized,
     simplify_constants,
     compute_fixed_point,
+    GLHilbertStep,
+    GLHilbertProof,
+    gl_hilbert_axioms,
+    gl_derive_axiom_4,
+    GLSequent,
+    GLSequentNode,
+    GLDecisionResult,
+    GLDecisionProcedure,
+    prove_gl,
+    check_gl_validity,
+    PASentence,
+    PAAtom,
+    PAEquation,
+    PATrue,
+    PAFalse,
+    PANot,
+    PAAnd,
+    PAOr,
+    PAImplies,
+    PAIff,
+    PAProvability,
+    PAConsistency,
+    ArithmeticalRealization,
+    solovay_translation,
+    solovay_derivability_conditions,
+    solovay_goedel_second_incompleteness,
 )
 from modallogic.tableau import TableauSolver
 
@@ -145,6 +173,191 @@ class TestProvabilityLogicGL(unittest.TestCase):
         self.assertFalse(res_bot.is_valid)
         self.assertTrue(res_bot.verify_countermodel(parse_formula("[]BOT")))
         self.assertTrue(res_bot.countermodel.frame.is_gl_frame())
+
+    def test_gl_hilbert_system_and_axiom_4_deduction(self):
+        axioms = gl_hilbert_axioms("p", "q")
+        self.assertIn("K", axioms)
+        self.assertIn("LOB", axioms)
+
+        # Verified derivation of Axiom 4 from Löb's axiom
+        proof = gl_derive_axiom_4("p")
+        self.assertEqual(len(proof.steps), 22)
+        self.assertTrue(proof.verify(), "Hilbert proof must be formally verified")
+        self.assertEqual(proof.conclusion, axiom_4("p"))
+
+        # String representation covers steps
+        proof_str = str(proof)
+        self.assertIn("GL Derivation of Transitivity Axiom 4", proof_str)
+        self.assertIn("22.", proof_str)
+
+        # Test verification failure on corrupted proof step
+        corrupt_proof = gl_derive_axiom_4("p")
+        corrupt_proof.steps[0].formula = Atom("unprovable_atom")
+        self.assertFalse(corrupt_proof.verify())
+
+    def test_gl_frame_condition_diagnostics(self):
+        # 1. Transitive, irreflexive, converse well-founded frame
+        f_gl = KripkeFrame(
+            worlds=["w0", "w1", "w2"],
+            relation=[("w0", "w1"), ("w1", "w2"), ("w0", "w2")],
+        )
+        self.assertTrue(is_irreflexive(f_gl))
+        self.assertTrue(is_transitive(f_gl))
+        self.assertTrue(is_converse_well_founded(f_gl))
+        is_gl, diags = verify_gl_frame_condition(f_gl)
+        self.assertTrue(is_gl)
+        self.assertEqual(len(diags), 0)
+
+        # 2. Reflexive violation
+        f_refl = KripkeFrame(worlds=["w0"], relation=[("w0", "w0")])
+        self.assertFalse(is_irreflexive(f_refl))
+        is_gl_refl, diags_refl = verify_gl_frame_condition(f_refl)
+        self.assertFalse(is_gl_refl)
+        self.assertTrue(any("Irreflexivity failure" in d for d in diags_refl))
+
+        # 3. Transitivity violation
+        f_nontrans = KripkeFrame(
+            worlds=["w0", "w1", "w2"],
+            relation=[("w0", "w1"), ("w1", "w2")],
+        )
+        self.assertFalse(is_transitive(f_nontrans))
+        is_gl_trans, diags_trans = verify_gl_frame_condition(f_nontrans)
+        self.assertFalse(is_gl_trans)
+        self.assertTrue(any("Transitivity failure" in d for d in diags_trans))
+
+        # 4. Cycle violation (e.g. 2-cycle)
+        f_cycle = KripkeFrame(
+            worlds=["w0", "w1"],
+            relation=[("w0", "w1"), ("w1", "w0")],
+        )
+        self.assertFalse(is_converse_well_founded(f_cycle))
+        is_gl_cyc, diags_cyc = verify_gl_frame_condition(f_cycle)
+        self.assertFalse(is_gl_cyc)
+        self.assertTrue(any("Converse well-foundedness failure" in d or "Transitivity failure" in d for d in diags_cyc))
+
+    def test_terminating_sequent_decision_procedure_theorems(self):
+        # 1. Löb's Axiom
+        res_lob = prove_gl(axiom_gl("p"))
+        self.assertTrue(res_lob.is_valid)
+        self.assertIsNotNone(res_lob.proof_tree)
+        self.assertTrue(res_lob.proof_tree.is_closed)
+
+        # 2. Transitivity Axiom 4
+        res_4 = prove_gl(axiom_4("p"))
+        self.assertTrue(res_4.is_valid)
+
+        # 3. Axiom K
+        res_k = prove_gl(parse_formula("[](p -> q) -> ([]p -> []q)"))
+        self.assertTrue(res_k.is_valid)
+
+        # 4. Gödel's Second Incompleteness Theorem
+        res_g2 = prove_gl(godel_second_incompleteness())
+        self.assertTrue(res_g2.is_valid)
+
+        # 5. Compound GL theorem: []p -> []([]q -> p)
+        res_comp = prove_gl(parse_formula("[]p -> []([]q -> p)"))
+        self.assertTrue(res_comp.is_valid)
+
+        # 6. Distribution of box over conjunction
+        res_and = check_gl_validity(parse_formula("[](p & q) <-> ([]p & []q)"))
+        self.assertTrue(res_and.is_valid)
+
+        # 7. Propositional tautology under modalities
+        res_taut = check_gl_validity(parse_formula("[](p | ~p)"))
+        self.assertTrue(res_taut.is_valid)
+
+    def test_terminating_sequent_decision_procedure_countermodels(self):
+        # 1. Axiom T ([]p -> p) fails in GL
+        res_t = prove_gl(parse_formula("[]p -> p"))
+        self.assertFalse(res_t.is_valid)
+        self.assertIsNotNone(res_t.countermodel)
+        self.assertTrue(res_t.verify_countermodel())
+        self.assertTrue(res_t.countermodel.frame.is_gl_frame())
+        self.assertTrue(res_t.countermodel.frame.is_irreflexive())
+
+        # 2. Consistency theorem failure ([]BOT is unprovable)
+        res_bot = prove_gl(parse_formula("[]BOT"))
+        self.assertFalse(res_bot.is_valid)
+        self.assertTrue(res_bot.verify_countermodel())
+        self.assertTrue(res_bot.countermodel.frame.is_gl_frame())
+
+        # 3. Symmetry Axiom B (p -> []<>p) fails in GL
+        res_b = prove_gl(parse_formula("p -> []<>p"))
+        self.assertFalse(res_b.is_valid)
+        self.assertTrue(res_b.verify_countermodel())
+        self.assertTrue(res_b.countermodel.frame.is_gl_frame())
+
+        # 4. Euclidean Axiom 5 (<>p -> []<>p) fails in GL
+        res_5 = prove_gl(parse_formula("<>p -> []<>p"))
+        self.assertFalse(res_5.is_valid)
+        self.assertTrue(res_5.verify_countermodel())
+        self.assertTrue(res_5.countermodel.frame.is_gl_frame())
+
+        # 5. Propositional non-theorem: p
+        res_atom = prove_gl(Atom("p"))
+        self.assertFalse(res_atom.is_valid)
+        self.assertTrue(res_atom.verify_countermodel())
+
+        # 6. Branching non-theorem: p | q -> p & q
+        res_branch = prove_gl(parse_formula("(p | q) -> (p & q)"))
+        self.assertFalse(res_branch.is_valid)
+        self.assertTrue(res_branch.verify_countermodel())
+
+        # 7. Modalized loop formula termination: []p <-> p
+        res_loop = prove_gl(parse_formula("[]p <-> p"))
+        self.assertFalse(res_loop.is_valid)
+        self.assertTrue(res_loop.verify_countermodel())
+        self.assertTrue(res_loop.countermodel.frame.is_gl_frame())
+
+    def test_solovay_arithmetical_realization(self):
+        # 1. Base translation of propositional and modal formulas
+        f = parse_formula("[](p -> q) -> ([]p -> []q)")
+        pa_f = solovay_translation(f)
+        self.assertIsInstance(pa_f, PAImplies)
+        self.assertIsInstance(pa_f.left, PAProvability)
+        self.assertIsInstance(pa_f.right.left, PAProvability)
+        self.assertIn("Prov_PA", str(pa_f))
+
+        # 2. Constants translation
+        f_const = parse_formula("TOP & ~BOT")
+        pa_const = solovay_translation(f_const)
+        self.assertIsInstance(pa_const, PAAnd)
+        self.assertEqual(str(pa_const.left), "(0 = 0)")
+        self.assertEqual(str(pa_const.right.inner), "(0 = 1)")
+
+        # 3. Custom arithmetical realization mapping
+        custom_realizer = ArithmeticalRealization(
+            {
+                "p": PAEquation("x", "0"),
+                "q": PAEquation("y", "1"),
+            }
+        )
+        pa_custom = solovay_translation(parse_formula("[]p -> q"), custom_realizer)
+        self.assertEqual(str(pa_custom), "(Prov_PA([(x = 0)]) -> (y = 1))")
+
+        # 4. Derivability conditions in PA
+        d_conds = solovay_derivability_conditions()
+        self.assertIn("D1", d_conds)
+        self.assertIn("D2", d_conds)
+        self.assertIn("D3", d_conds)
+        self.assertIn("LOB", d_conds)
+        self.assertIsInstance(d_conds["D1"], PAProvability)
+        self.assertIsInstance(d_conds["LOB"], PAImplies)
+
+        # 5. Gödel's Second Incompleteness Theorem under Solovay realization
+        pa_g2 = solovay_goedel_second_incompleteness()
+        self.assertIsInstance(pa_g2, PAImplies)
+        self.assertEqual(str(pa_g2), "(~Prov_PA([(0 = 1)]) -> ~Prov_PA([~Prov_PA([(0 = 1)])]))")
+
+        # 6. Consistency predicate representation
+        consis_default = PAConsistency()
+        self.assertEqual(str(consis_default), "Consis_PA")
+        prov_equiv = consis_default.to_provability()
+        self.assertIsInstance(prov_equiv, PANot)
+        self.assertEqual(str(prov_equiv), "~Prov_PA([(0 = 1)])")
+
+        consis_custom = PAConsistency(PAAtom("Theory"))
+        self.assertEqual(str(consis_custom), "Consis_PA(Theory)")
 
 
 if __name__ == "__main__":
