@@ -100,6 +100,13 @@ class KripkeFrame:
                         return False
         return True
 
+    def is_functional(self) -> bool:
+        """Axiom CD condition: at most one successor per world (forall w, u, v: w R u and w R v implies u == v)."""
+        for w in self.worlds:
+            if len(self.successors(w)) > 1:
+                return False
+        return True
+
     def is_confluent(self) -> bool:
         """Church-Rosser / Lemmon confluence condition:
         forall w, u, v: w R u and w R v implies exists z: u R z and v R z.

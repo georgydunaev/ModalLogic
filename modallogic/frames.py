@@ -14,6 +14,7 @@ class FrameProperty:
     EUCLIDEAN = "euclidean"
     CONFLUENT = "confluent"
     DIRECTED = "directed"
+    FUNCTIONAL = "functional"
     WELL_FOUNDED = "well_founded"
     CONVERSE_WELL_FOUNDED = "converse_well_founded"
 
@@ -98,6 +99,21 @@ class ConfluentFrameMixin:
                     succ_v = self.successors(v)
                     if not (succ_u & succ_v):
                         return False, (w, u, v)
+        return True, None
+
+
+class FunctionalFrameMixin:
+    """Mixin enforcing functionality (at most one successor per world):
+    forall w, u, v, (w R u and w R v) implies u == v.
+    """
+
+    REQUIRED_PROPERTIES = (FrameProperty.FUNCTIONAL,)
+
+    def check_functional_property(self: KripkeFrame) -> Tuple[bool, Optional[Tuple[Any, Any, Any]]]:
+        for w in sorted(list(self.worlds), key=lambda x: str(x)):
+            succ = sorted(list(self.successors(w)), key=lambda x: str(x))
+            if len(succ) > 1:
+                return False, (w, succ[0], succ[1])
         return True, None
 
 
@@ -226,6 +242,8 @@ class ComposableFrame(KripkeFrame):
             return self.is_euclidean(), None if self.is_euclidean() else self._witness_non_euclidean()
         if prop in (FrameProperty.CONFLUENT, FrameProperty.DIRECTED):
             return self.is_confluent(), None if self.is_confluent() else self._witness_non_confluent()
+        if prop == FrameProperty.FUNCTIONAL:
+            return self.is_functional(), None if self.is_functional() else self._witness_non_functional()
         if prop == FrameProperty.CONVERSE_WELL_FOUNDED:
             return self.is_converse_well_founded(), None if self.is_converse_well_founded() else self._witness_cycle()
         if prop == FrameProperty.WELL_FOUNDED:
@@ -275,6 +293,13 @@ class ComposableFrame(KripkeFrame):
                     succ_v = self.successors(v)
                     if not (succ_u & succ_v):
                         return (w, u, v)
+        return None
+
+    def _witness_non_functional(self) -> Optional[Tuple[Any, Any, Any]]:
+        for w in sorted(list(self.worlds), key=lambda x: str(x)):
+            succ = sorted(list(self.successors(w)), key=lambda x: str(x))
+            if len(succ) > 1:
+                return (w, succ[0], succ[1])
         return None
 
     def _witness_cycle(self) -> Optional[List[Any]]:
@@ -423,6 +448,16 @@ class ConfluentFrame(ConfluentFrameMixin, ComposableFrame):
 DirectedFrame = ConfluentFrame
 
 
+class FunctionalFrame(FunctionalFrameMixin, ComposableFrame):
+    """Functional / deterministic modal frame (partial function condition)."""
+
+    SYSTEM_NAME = "CD"
+    EXPECTED_PROPERTIES = (FrameProperty.FUNCTIONAL,)
+
+
+CDFrame = FunctionalFrame
+
+
 FRAME_CLASSES: Dict[str, Type[ComposableFrame]] = {
     "K": KFrame,
     "KD": KDFrame,
@@ -438,6 +473,8 @@ FRAME_CLASSES: Dict[str, Type[ComposableFrame]] = {
     "C4": ConfluentFrame,
     "CONFLUENT": ConfluentFrame,
     "DIRECTED": DirectedFrame,
+    "CD": CDFrame,
+    "FUNCTIONAL": FunctionalFrame,
 }
 
 

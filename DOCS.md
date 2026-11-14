@@ -202,6 +202,34 @@ The `modallogic` Python package provides the following modular structure:
 - `model.verify_truth_lemma() -> Dict`: Checks `M, w |= psi iff psi in w`.
 - `model.verify_frame_conditions() -> Dict`: Validates that canonical frame satisfies system conditions (e.g. S4 preorder, S5 equivalence relation, GL strict DAG).
 
+### 4.11 First-Order Standard Translation (`modallogic.fo_translation`)
+- `FOFormula`: Base class for classical first-order logic formulas.
+  - Subclasses: `FOTop`, `FOBottom`, `Predicate(name, var)`, `Relation(name, var1, var2)`, `Equality(var1, var2)`, `FONot(sub)`, `FOAnd(left, right)`, `FOOr(left, right)`, `FOImplies(left, right)`, `FOIff(left, right)`, `Forall(var, body)`, `Exists(var, body)`.
+- `standard_translation(formula, var='x')` (also `ST_x`, `st`): Computes van Benthem's Standard Translation mapping a modal formula into the two-variable fragment FO^2.
+  - Alternates variables `x` and `y` at modal quantifier depth:
+    - `ST_x(p) = P(x)`
+    - `ST_x(~phi) = ~ST_x(phi)`
+    - `ST_x([]phi) = forall y (R(x, y) -> ST_y(phi))`
+    - `ST_x(<>phi) = exists y (R(x, y) & ST_y(phi))`
+- `evaluate_fo(fo_formula, model, assignment) -> bool`: Direct semantic truth evaluation of first-order formulas on relational Kripke models.
+  - Formally proves van Benthem's embedding theorem: `M, w |= phi iff M, [x -> w] |= ST_x(phi)`.
+- Canonical first-order frame conditions:
+  - `fo_reflexive()`, `fo_symmetric()`, `fo_transitive()`, `fo_euclidean()`, `fo_serial()`, `fo_functional()`, `fo_confluent()`.
+
+### 4.12 Sahlqvist Recognizer and Frame Correspondence (`modallogic.correspondence`)
+- Sahlqvist recognizer:
+  - `polarity_of_atoms(formula)`: Computes the set of polarities (`+1` or `-1`) for all atom occurrences.
+  - `is_positive(formula)` / `is_negative(formula)`: Checks whether a formula is purely positive/negative.
+  - `is_sahlqvist(formula)` (and `is_sahlqvist_formula(formula)`): Determines if an implication `phi -> psi` is a Sahlqvist formula (where `psi` is positive and `phi` is a Sahlqvist antecedent composed from negative formulas, boxed atoms, and diamonds).
+  - `SahlqvistRecognizer`: Structured class providing detailed analysis and decomposition of Sahlqvist formulas.
+- Canonical frame condition matching:
+  - `CANONICAL_FRAME_CONDITIONS`: Dictionary mapping standard modal axioms (T, B, 4, 5, D, CD, C4) to their first-order relational frame conditions.
+  - `match_axiom_frame_condition(formula)`: Recognizes canonical axiom shapes modulo renaming and associates them with corresponding first-order conditions.
+  - `get_canonical_frame_condition(axiom_name)`: Retrieves the FO condition for a known axiom name.
+- Axiom CD (Partial Functionality) correspondence:
+  - `check_functionality(frame)` / `check_partial_functionality(frame)`: Verifies `forall w, u, v: (w R u and w R v) -> u = v`.
+  - `correspondence_theorem_cd(frame)`: Constructive correspondence proof between Axiom CD `<>p -> []p` and partial functionality.
+
 ---
 
 ## 5. Bisimulation and Invariance Theorems

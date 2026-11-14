@@ -1,6 +1,6 @@
 """Frame correspondence theorems, relational property checkers, and constructive countervaluations."""
 
-from typing import Set, Tuple, Dict, Any, Optional, List
+from typing import Set, Tuple, Dict, Any, Optional, List, Union
 from .syntax import (
     Formula,
     Atom,
@@ -24,6 +24,17 @@ from .axioms import (
     axiom_5,
     axiom_gl,
     axiom_c4,
+    axiom_cd,
+)
+from .fo_translation import (
+    FOFormula,
+    fo_reflexive_condition,
+    fo_symmetric_condition,
+    fo_transitive_condition,
+    fo_euclidean_condition,
+    fo_serial_condition,
+    fo_functional_condition,
+    fo_confluent_condition,
 )
 
 
@@ -139,6 +150,68 @@ def check_well_foundedness(frame: KripkeFrame) -> Tuple[bool, Optional[List[Any]
     Returns (True, None) or (False, cycle_path).
     """
     return check_converse_well_foundedness(frame)
+
+
+def check_functionality(frame: KripkeFrame) -> Tuple[bool, Optional[Tuple[Any, Any, Any]]]:
+    """Check whether frame is functional (deterministic / partial function):
+    forall w, u, v: (w R u and w R v) implies u == v (at most one successor per world).
+    Returns (True, None) or (False, (w, u, v)).
+    """
+    for w in sorted(list(frame.worlds), key=lambda x: str(x)):
+        succ = sorted(list(frame.successors(w)), key=lambda x: str(x))
+        if len(succ) > 1:
+            return False, (w, succ[0], succ[1])
+    return True, None
+
+
+def check_partial_functionality(frame: KripkeFrame) -> Tuple[bool, Optional[Tuple[Any, Any, Any]]]:
+    """Alias for check_functionality."""
+    return check_functionality(frame)
+
+
+def correspondence_theorem_cd(frame: KripkeFrame) -> Dict[str, Any]:
+    """Frame correspondence theorem for Axiom CD:
+    Frame F satisfies Axiom CD (<>p -> []p) if and only if F is functional (at most one successor per world).
+    """
+    ax = axiom_cd("p")
+    is_func, witness_triple = check_functionality(frame)
+
+    if is_func:
+        return {
+            "property": "functional",
+            "is_property_satisfied": True,
+            "is_axiom_valid": True,
+            "axiom": ax,
+            "witness": None,
+            "countermodel": None,
+            "counterworld": None,
+            "proof_explanation": (
+                "Frame is functional. Every world has at most one successor. "
+                "If w satisfies <>p, there is some successor u satisfying p; since u is the unique "
+                "successor of w, all successors of w satisfy p, so []p holds. "
+                "If w has no successors, <>p is false, so <>p -> []p is vacuously true."
+            ),
+        }
+
+    w, u, v = witness_triple  # type: ignore
+    # Constructive countervaluation: V(p) = {u}
+    valuation = {"p": {u}}
+    model = KripkeModel(frame, valuation)
+    return {
+        "property": "functional",
+        "is_property_satisfied": False,
+        "is_axiom_valid": False,
+        "axiom": ax,
+        "witness": witness_triple,
+        "countervaluation": valuation,
+        "countermodel": model,
+        "counterworld": w,
+        "proof_explanation": (
+            f"Frame is not functional: {w!r} has distinct successors {u!r} and {v!r}. "
+            f"Setting V(p) = {{{u!r}}} makes <>p true at {w!r} (witnessed by {u!r}), "
+            f"while []p is false at {w!r} because successor {v!r} falsifies p. Hence <>p -> []p fails at {w!r}."
+        ),
+    }
 
 
 def correspondence_theorem_t(frame: KripkeFrame) -> Dict[str, Any]:
@@ -488,6 +561,8 @@ def verify_frame_correspondence(frame: KripkeFrame, axiom_name: str) -> bool:
         res = correspondence_theorem_d(frame)
     elif name == "5":
         res = correspondence_theorem_5(frame)
+    elif name in ("CD", "FUNCTIONAL", "DETERMINISTIC"):
+        res = correspondence_theorem_cd(frame)
     elif name in ("C4", "CONFLUENT", "DIRECTED"):
         res = correspondence_theorem_c4(frame)
     elif name == "GL":
@@ -522,6 +597,8 @@ class AutomatedCorrespondenceChecker:
         "B": correspondence_theorem_b,
         "D": correspondence_theorem_d,
         "5": correspondence_theorem_5,
+        "CD": correspondence_theorem_cd,
+        "FUNCTIONAL": correspondence_theorem_cd,
         "C4": correspondence_theorem_c4,
         "CONFLUENT": correspondence_theorem_c4,
         "DIRECTED": correspondence_theorem_c4,
@@ -534,6 +611,8 @@ class AutomatedCorrespondenceChecker:
         "symmetric": check_symmetry,
         "serial": check_seriality,
         "euclidean": check_euclideanness,
+        "functional": check_functionality,
+        "partial_functional": check_functionality,
         "confluent": check_confluence,
         "directed": check_directedness,
         "well_founded": check_well_foundedness,
@@ -553,6 +632,7 @@ class AutomatedCorrespondenceChecker:
         "S5": ["T", "4", "5"],
         "GL": ["GL"],
         "C4": ["C4"],
+        "CD": ["CD"],
     }
 
     @classmethod
@@ -588,4 +668,361 @@ class AutomatedCorrespondenceChecker:
                 report["is_valid"] = False
                 report["failed_axioms"].append(ax)
         return report
+
+
+# Sahlqvist Formula Recognizer and Polarity Analysis
+
+
+def polarity_of_atoms(formula: Formula, current_polarity: int = 1) -> Dict[str, Set[int]]:
+    """Determine the polarities (+1 positive, -1 negative) with which each propositional atom occurs."""
+    res: Dict[str, Set[int]] = {}
+
+    def _merge(other: Dict[str, Set[int]]) -> None:
+        for k, v in other.items():
+            if k not in res:
+                res[k] = set()
+            res[k].update(v)
+
+    if isinstance(formula, Atom):
+        res[formula.name] = {current_polarity}
+    elif isinstance(formula, (Top, Bottom)):
+        pass
+    elif isinstance(formula, Not):
+        _merge(polarity_of_atoms(formula.inner, -current_polarity))
+    elif isinstance(formula, (And, Or)):
+        _merge(polarity_of_atoms(formula.left, current_polarity))
+        _merge(polarity_of_atoms(formula.right, current_polarity))
+    elif isinstance(formula, Implies):
+        _merge(polarity_of_atoms(formula.left, -current_polarity))
+        _merge(polarity_of_atoms(formula.right, current_polarity))
+    elif isinstance(formula, Iff):
+        _merge(polarity_of_atoms(formula.left, 1))
+        _merge(polarity_of_atoms(formula.left, -1))
+        _merge(polarity_of_atoms(formula.right, 1))
+        _merge(polarity_of_atoms(formula.right, -1))
+    elif isinstance(formula, (Box, Dia)):
+        _merge(polarity_of_atoms(formula.inner, current_polarity))
+    return res
+
+
+def is_positive(formula: Formula) -> bool:
+    """Check if formula is positive: every atom occurs only in positive positions (+1)."""
+    pol = polarity_of_atoms(formula)
+    return all(-1 not in s for s in pol.values())
+
+
+def is_negative(formula: Formula) -> bool:
+    """Check if formula is negative: every atom occurs only in negative positions (-1)."""
+    pol = polarity_of_atoms(formula)
+    return all(1 not in s for s in pol.values())
+
+
+def is_boxed_atom(formula: Formula) -> bool:
+    """Check if formula has the form Box^k(p) for k >= 0 and propositional atom p."""
+    curr = formula
+    while isinstance(curr, Box):
+        curr = curr.inner
+    return isinstance(curr, Atom)
+
+
+def is_sahlqvist_antecedent(formula: Formula) -> bool:
+    """Check if formula is a Sahlqvist antecedent:
+    built up from negative formulas, Box^k(p) (k >= 0), and constants (Top, Bottom)
+    using only And, Or, and Dia.
+    """
+    if is_negative(formula):
+        return True
+    if is_boxed_atom(formula):
+        return True
+    if isinstance(formula, (Top, Bottom)):
+        return True
+    if isinstance(formula, And):
+        return is_sahlqvist_antecedent(formula.left) and is_sahlqvist_antecedent(formula.right)
+    if isinstance(formula, Or):
+        return is_sahlqvist_antecedent(formula.left) and is_sahlqvist_antecedent(formula.right)
+    if isinstance(formula, Dia):
+        return is_sahlqvist_antecedent(formula.inner)
+    return False
+
+
+def is_sahlqvist(formula: Formula) -> bool:
+    """Check if formula is a Sahlqvist formula.
+    
+    A Sahlqvist formula is constructed from Sahlqvist implications (A -> B where A is
+    a Sahlqvist antecedent and B is positive) using Box and And.
+    Also handles positive formulas (vacuous antecedent Top), negative formulas,
+    and disjunctive forms (~A | B).
+    """
+    # 1. Implication form A -> B
+    if isinstance(formula, Implies):
+        return is_sahlqvist_antecedent(formula.left) and is_positive(formula.right)
+
+    # 2. Conjunction of Sahlqvist formulas
+    if isinstance(formula, And):
+        return is_sahlqvist(formula.left) and is_sahlqvist(formula.right)
+
+    # 3. Boxed Sahlqvist formula
+    if isinstance(formula, Box):
+        return is_sahlqvist(formula.inner)
+
+    # 4. Purely positive formula (equivalent to Top -> formula)
+    if is_positive(formula):
+        return True
+
+    # 5. Purely negative formula (equivalent to formula -> Bottom)
+    if is_negative(formula):
+        return True
+
+    # 6. Disjunctive form ~A | B or B | ~A
+    if isinstance(formula, Or):
+        if isinstance(formula.left, Not) and is_sahlqvist_antecedent(formula.left.inner) and is_positive(formula.right):
+            return True
+        if isinstance(formula.right, Not) and is_sahlqvist_antecedent(formula.right.inner) and is_positive(formula.left):
+            return True
+
+    return False
+
+
+is_sahlqvist_formula = is_sahlqvist
+
+
+class SahlqvistRecognizer:
+    """Automated Sahlqvist formula recognizer and classification engine."""
+
+    @classmethod
+    def is_positive(cls, formula: Formula) -> bool:
+        return is_positive(formula)
+
+    @classmethod
+    def is_negative(cls, formula: Formula) -> bool:
+        return is_negative(formula)
+
+    @classmethod
+    def is_sahlqvist_antecedent(cls, formula: Formula) -> bool:
+        return is_sahlqvist_antecedent(formula)
+
+    @classmethod
+    def is_sahlqvist(cls, formula: Formula) -> bool:
+        return is_sahlqvist(formula)
+
+    @classmethod
+    def analyze(cls, formula: Formula) -> Dict[str, Any]:
+        """Perform comprehensive Sahlqvist syntactic and semantic correspondence analysis."""
+        pos = is_positive(formula)
+        neg = is_negative(formula)
+
+        if isinstance(formula, Implies):
+            ante_ok = is_sahlqvist_antecedent(formula.left)
+            cons_ok = is_positive(formula.right)
+            sahlqvist = ante_ok and cons_ok
+            if sahlqvist:
+                cls_type = "sahlqvist_implication"
+                reason = "Antecedent is a valid Sahlqvist antecedent and consequent is positive."
+            else:
+                cls_type = "non_sahlqvist_implication"
+                failures = []
+                if not ante_ok:
+                    failures.append("antecedent is not a Sahlqvist antecedent")
+                if not cons_ok:
+                    failures.append("consequent is not positive")
+                reason = "Fails Sahlqvist criteria: " + "; ".join(failures) + "."
+            return {
+                "formula": formula,
+                "is_sahlqvist": sahlqvist,
+                "classification": cls_type,
+                "is_positive": pos,
+                "is_negative": neg,
+                "antecedent": formula.left,
+                "consequent": formula.right,
+                "corresponds_to_first_order": sahlqvist,
+                "reason": reason,
+            }
+
+        if is_sahlqvist(formula):
+            if pos:
+                cls_type = "positive_formula"
+                reason = "Formula is purely positive (vacuous antecedent TOP)."
+            elif neg:
+                cls_type = "negative_formula"
+                reason = "Formula is purely negative (consequent BOTTOM)."
+            elif isinstance(formula, And):
+                cls_type = "conjunction_of_sahlqvist"
+                reason = "Conjunction of Sahlqvist formulas."
+            elif isinstance(formula, Box):
+                cls_type = "boxed_sahlqvist"
+                reason = "Box prefix of Sahlqvist formula."
+            else:
+                cls_type = "sahlqvist_formula"
+                reason = "Formula matches Sahlqvist criteria."
+            return {
+                "formula": formula,
+                "is_sahlqvist": True,
+                "classification": cls_type,
+                "is_positive": pos,
+                "is_negative": neg,
+                "antecedent": None,
+                "consequent": None,
+                "corresponds_to_first_order": True,
+                "reason": reason,
+            }
+
+        return {
+            "formula": formula,
+            "is_sahlqvist": False,
+            "classification": "non_sahlqvist",
+            "is_positive": pos,
+            "is_negative": neg,
+            "antecedent": None,
+            "consequent": None,
+            "corresponds_to_first_order": False,
+            "reason": "Formula does not conform to Sahlqvist syntax (does not define a first-order frame condition).",
+        }
+
+
+# Canonical Modal Axiom to First-Order Frame Condition Correspondence Engine
+
+
+def formulas_isomorphic(
+    f1: Formula,
+    f2: Formula,
+    mapping: Optional[Dict[str, str]] = None,
+    rev_mapping: Optional[Dict[str, str]] = None,
+) -> bool:
+    """Check whether two formulas have isomorphic AST structures modulo bijective atom renaming."""
+    if mapping is None:
+        mapping = {}
+        rev_mapping = {}
+    if type(f1) is not type(f2):
+        return False
+    if isinstance(f1, Atom):
+        p1 = f1.name
+        p2 = f2.name  # type: ignore
+        if p1 in mapping:
+            return mapping[p1] == p2
+        if p2 in rev_mapping:
+            return rev_mapping[p2] == p1
+        mapping[p1] = p2
+        rev_mapping[p2] = p1
+        return True
+    if isinstance(f1, (Top, Bottom)):
+        return True
+    if isinstance(f1, Not):
+        return formulas_isomorphic(f1.inner, f2.inner, mapping, rev_mapping)  # type: ignore
+    if isinstance(f1, (Box, Dia)):
+        return formulas_isomorphic(f1.inner, f2.inner, mapping, rev_mapping)  # type: ignore
+    if isinstance(f1, (And, Or, Implies, Iff)):
+        return (
+            formulas_isomorphic(f1.left, f2.left, mapping, rev_mapping)  # type: ignore
+            and formulas_isomorphic(f1.right, f2.right, mapping, rev_mapping)  # type: ignore
+        )
+    return False
+
+
+CANONICAL_FRAME_CONDITIONS: Dict[str, Dict[str, Any]] = {
+    "T": {
+        "axiom_name": "T",
+        "property": "reflexive",
+        "modal_schema": "[]p -> p",
+        "modal_formula": axiom_t(),
+        "fo_condition": "forall x. R(x, x)",
+        "fo_ast": fo_reflexive_condition(),
+        "is_sahlqvist": True,
+        "description": "Reflexive accessibility relation: every world accesses itself.",
+    },
+    "B": {
+        "axiom_name": "B",
+        "property": "symmetric",
+        "modal_schema": "p -> []<>p",
+        "modal_formula": axiom_b(),
+        "fo_condition": "forall x, y. (R(x, y) -> R(y, x))",
+        "fo_ast": fo_symmetric_condition(),
+        "is_sahlqvist": True,
+        "description": "Symmetric accessibility relation: if x accesses y, y accesses x.",
+    },
+    "4": {
+        "axiom_name": "4",
+        "property": "transitive",
+        "modal_schema": "[]p -> [][]p",
+        "modal_formula": axiom_4(),
+        "fo_condition": "forall x, y, z. ((R(x, y) /\\ R(y, z)) -> R(x, z))",
+        "fo_ast": fo_transitive_condition(),
+        "is_sahlqvist": True,
+        "description": "Transitive accessibility relation: two-step accessibility implies one-step accessibility.",
+    },
+    "5": {
+        "axiom_name": "5",
+        "property": "euclidean",
+        "modal_schema": "<>p -> []<>p",
+        "modal_formula": axiom_5(),
+        "fo_condition": "forall x, y, z. ((R(x, y) /\\ R(x, z)) -> R(y, z))",
+        "fo_ast": fo_euclidean_condition(),
+        "is_sahlqvist": True,
+        "description": "Euclidean accessibility relation: worlds with a common predecessor access each other.",
+    },
+    "D": {
+        "axiom_name": "D",
+        "property": "serial",
+        "modal_schema": "[]p -> <>p",
+        "modal_formula": axiom_d(),
+        "fo_condition": "forall x exists y. R(x, y)",
+        "fo_ast": fo_serial_condition(),
+        "is_sahlqvist": True,
+        "description": "Serial accessibility relation: every world has at least one successor (no dead ends).",
+    },
+    "CD": {
+        "axiom_name": "CD",
+        "property": "functional",
+        "modal_schema": "<>p -> []p",
+        "modal_formula": axiom_cd(),
+        "fo_condition": "forall x, y, z. ((R(x, y) /\\ R(x, z)) -> y = z)",
+        "fo_ast": fo_functional_condition(),
+        "is_sahlqvist": True,
+        "description": "Functional accessibility relation: at most one successor per world (partial function / deterministic).",
+    },
+    "C4": {
+        "axiom_name": "C4",
+        "property": "confluent",
+        "modal_schema": "<>[]p -> []<>p",
+        "modal_formula": axiom_c4(),
+        "fo_condition": "forall x, y, z. ((R(x, y) /\\ R(x, z)) -> exists u. (R(y, u) /\\ R(z, u)))",
+        "fo_ast": fo_confluent_condition(),
+        "is_sahlqvist": True,
+        "description": "Confluent accessibility relation: common predecessors have a common successor (Church-Rosser / directed).",
+    },
+}
+
+
+def match_axiom_frame_condition(axiom_or_formula: Union[str, Formula]) -> Optional[Dict[str, Any]]:
+    """Match classical modal axioms (T, B, 4, 5, D, CD, C4) against canonical first-order frame conditions.
+    
+    Accepts either an axiom name string (e.g. 'T', 'B', '4', '5', 'D', 'CD', 'C4') or a Formula AST.
+    Returns the correspondence dictionary entry or None if unmatched.
+    """
+    if isinstance(axiom_or_formula, str):
+        key = axiom_or_formula.strip().upper()
+        if key in CANONICAL_FRAME_CONDITIONS:
+            return CANONICAL_FRAME_CONDITIONS[key]
+        for entry in CANONICAL_FRAME_CONDITIONS.values():
+            if entry["property"].upper() == key:
+                return entry
+        return None
+
+    if isinstance(axiom_or_formula, Formula):
+        for entry in CANONICAL_FRAME_CONDITIONS.values():
+            if formulas_isomorphic(axiom_or_formula, entry["modal_formula"]):
+                return entry
+        return None
+
+    raise TypeError(f"Expected str or Formula, got {type(axiom_or_formula)}")
+
+
+def get_canonical_frame_condition(axiom_name: str) -> Dict[str, Any]:
+    """Retrieve canonical first-order frame condition for axiom name, raising KeyError if unknown."""
+    res = match_axiom_frame_condition(axiom_name)
+    if res is None:
+        raise KeyError(
+            f"Unknown correspondence axiom: {axiom_name!r}. Available: {list(CANONICAL_FRAME_CONDITIONS.keys())}"
+        )
+    return res
+
 
