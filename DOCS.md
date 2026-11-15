@@ -230,6 +230,19 @@ The `modallogic` Python package provides the following modular structure:
   - `check_functionality(frame)` / `check_partial_functionality(frame)`: Verifies `forall w, u, v: (w R u and w R v) -> u = v`.
   - `correspondence_theorem_cd(frame)`: Constructive correspondence proof between Axiom CD `<>p -> []p` and partial functionality.
 
+### 4.13 Multi-Agent Epistemic Logic and Dynamic Public Announcements (`modallogic.syntax`, `modallogic.semantics`, `modallogic.tableau`)
+- Epistemic and Dynamic AST Nodes:
+  - `Knows(agent_id, formula)`: Individual knowledge $K_i \varphi$ evaluated over agent accessibility relation $R_i$.
+  - `CommonKnowledge(agent_group, formula)`: Group common knowledge $C_G \varphi$ evaluated over the transitive closure $\left(\bigcup_{i \in G} R_i\right)^+$.
+  - `DistributedKnowledge(agent_group, formula)`: Group distributed knowledge $D_G \varphi$ evaluated over the intersection $\bigcap_{i \in G} R_i$.
+  - `PublicAnnouncement(announcement, target_formula)`: Dynamic public announcement $[\varphi]\psi$ evaluated on the restricted model $M|_{\varphi}$.
+- Multi-Agent Kripke Semantics:
+  - `MultiAgentKripkeFrame(worlds, relations, enforce_s5=False)`: Stores agent-indexed relations $R_i$, validates S5 equivalence properties per agent, and computes common and distributed accessibility closures.
+  - `MultiAgentKripkeModel(frame, valuation)`: Evaluates multi-agent epistemic formulas and produces updated models under `public_announcement(announcement)`.
+- Plaza Reduction and Epistemic Tableau Proving:
+  - `reduce_public_announcement(formula)`: Applies Jan Plaza's (1989) reduction axioms to translate PAL formulas into epistemic logic.
+  - `TableauSolver`: Supports multi-agent $S5_n$ epistemic propagation and fresh world generation for `Knows`, `CommonKnowledge`, `DistributedKnowledge`, and `PublicAnnouncement`.
+
 ---
 
 ## 5. Bisimulation and Invariance Theorems
@@ -254,7 +267,21 @@ The labeled semantic tableau calculus tests the validity of a formula `phi` by s
 
 ---
 
-## 7. Verification and Testing
+## 7. Philosophical, Epistemic, Deontic, and Temporal Foundations
+
+Modal logic provides a unified relational semantics across philosophy, computer science, and mathematical foundations:
+1. **Alethic Modal Logic (`K`, `T`, `S4`, `S5`)**: Models metaphysical necessity (`[]phi` holds in all possible worlds) and possibility (`<>phi` holds in at least one possible world).
+2. **Epistemic and Doxastic Logic (`S5_n`, `KD45`)**:
+   - Knowledge (`S5`) satisfies veridicality (`K_i p -> p`), positive introspection (`K_i p -> K_i K_i p`), and negative introspection (`~K_i p -> K_i ~K_i p`).
+   - Belief (`KD45`) drops veridicality in favor of consistency/seriality (`B_i p -> ~B_i ~p`).
+   - Dynamic Epistemic Logic (`PAL`) models information update by restricting possible worlds to those satisfying a public announcement (`[phi] psi`).
+3. **Deontic Logic (`KD`)**: Models normative obligation (`O p`) and permission (`P p`) over serial frames where every world has at least one ideal deontic alternative.
+4. **Temporal Logic (`K4`, `S4`, Linear/Branching Frames)**: Interprets `[]phi` as "always in the future" and `<>phi` as "eventually in the future" over transitive, dense (`C4`), or confluent (`G`) time flows.
+5. **Provability Logic (`GL`)**: Interprets `[]phi` as arithmetic provability $\text{Prov}_{PA}(\ulcorner \varphi \urcorner)$ in Peano Arithmetic, governed by Löb's Theorem (`[]([]p -> p) -> []p`) and Solovay's arithmetical completeness theorem over finite transitive converse well-founded trees.
+
+---
+
+## 8. Verification and Testing
 
 Execute the complete test suite:
 ```bash

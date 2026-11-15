@@ -14,9 +14,126 @@ from .syntax import (
     Iff,
     Box,
     Dia,
+    Knows,
+    CommonKnowledge,
+    DistributedKnowledge,
+    PublicAnnouncement,
     parse_formula,
 )
-from .semantics import KripkeFrame, KripkeModel
+from .semantics import KripkeFrame, KripkeModel, MultiAgentKripkeFrame, MultiAgentKripkeModel
+
+
+def reduce_public_announcement(formula: Formula) -> Formula:
+    """Apply Jan Plaza's (1989) reduction axioms to translate PublicAnnouncement into epistemic logic."""
+    if isinstance(formula, (Atom, Top, Bottom)):
+        return formula
+    if isinstance(formula, Not):
+        return Not(reduce_public_announcement(formula.inner))
+    if isinstance(formula, And):
+        return And(
+            reduce_public_announcement(formula.left),
+            reduce_public_announcement(formula.right),
+        )
+    if isinstance(formula, Or):
+        return Or(
+            reduce_public_announcement(formula.left),
+            reduce_public_announcement(formula.right),
+        )
+    if isinstance(formula, Implies):
+        return Implies(
+            reduce_public_announcement(formula.left),
+            reduce_public_announcement(formula.right),
+        )
+    if isinstance(formula, Iff):
+        return Iff(
+            reduce_public_announcement(formula.left),
+            reduce_public_announcement(formula.right),
+        )
+    if isinstance(formula, Box):
+        return Box(reduce_public_announcement(formula.inner))
+    if isinstance(formula, Dia):
+        return Dia(reduce_public_announcement(formula.inner))
+    if isinstance(formula, Knows):
+        return Knows(formula.agent_id, reduce_public_announcement(formula.formula))
+    if isinstance(formula, CommonKnowledge):
+        return CommonKnowledge(
+            formula.agent_group, reduce_public_announcement(formula.formula)
+        )
+    if isinstance(formula, DistributedKnowledge):
+        return DistributedKnowledge(
+            formula.agent_group, reduce_public_announcement(formula.formula)
+        )
+    if isinstance(formula, PublicAnnouncement):
+        ann = reduce_public_announcement(formula.announcement)
+        target = reduce_public_announcement(formula.target_formula)
+        if isinstance(target, Atom):
+            return Implies(ann, target)
+        if isinstance(target, Top):
+            return Top()
+        if isinstance(target, Bottom):
+            return Not(ann)
+        if isinstance(target, Not):
+            return Implies(
+                ann, Not(reduce_public_announcement(PublicAnnouncement(ann, target.inner)))
+            )
+        if isinstance(target, And):
+            return And(
+                reduce_public_announcement(PublicAnnouncement(ann, target.left)),
+                reduce_public_announcement(PublicAnnouncement(ann, target.right)),
+            )
+        if isinstance(target, Or):
+            return Implies(
+                ann,
+                Or(
+                    reduce_public_announcement(PublicAnnouncement(ann, target.left)),
+                    reduce_public_announcement(PublicAnnouncement(ann, target.right)),
+                ),
+            )
+        if isinstance(target, Implies):
+            return Implies(
+                reduce_public_announcement(PublicAnnouncement(ann, target.left)),
+                reduce_public_announcement(PublicAnnouncement(ann, target.right)),
+            )
+        if isinstance(target, Iff):
+            return Iff(
+                reduce_public_announcement(PublicAnnouncement(ann, target.left)),
+                reduce_public_announcement(PublicAnnouncement(ann, target.right)),
+            )
+        if isinstance(target, Knows):
+            return Implies(
+                ann,
+                Knows(
+                    target.agent_id,
+                    reduce_public_announcement(PublicAnnouncement(ann, target.formula)),
+                ),
+            )
+        if isinstance(target, Box):
+            return Implies(
+                ann,
+                Box(reduce_public_announcement(PublicAnnouncement(ann, target.inner))),
+            )
+        if isinstance(target, Dia):
+            return And(
+                ann,
+                Dia(reduce_public_announcement(PublicAnnouncement(ann, target.inner))),
+            )
+        if isinstance(target, DistributedKnowledge):
+            return Implies(
+                ann,
+                DistributedKnowledge(
+                    target.agent_group,
+                    reduce_public_announcement(PublicAnnouncement(ann, target.formula)),
+                ),
+            )
+        if isinstance(target, CommonKnowledge):
+            return Implies(
+                ann,
+                CommonKnowledge(
+                    target.agent_group,
+                    reduce_public_announcement(PublicAnnouncement(ann, target.formula)),
+                ),
+            )
+    return formula
 
 
 @dataclass(frozen=True)
@@ -145,16 +262,24 @@ class TableauBranch:
         signed_formulas: Optional[Set[SignedFormula]] = None,
         relation: Optional[Set[Tuple[str, str]]] = None,
         worlds: Optional[Set[str]] = None,
+        agent_relations: Optional[Dict[str, Set[Tuple[str, str]]]] = None,
     ):
         self.signed_formulas: Set[SignedFormula] = (
             set(signed_formulas) if signed_formulas else set()
         )
         self.relation: Set[Tuple[str, str]] = set(relation) if relation else set()
         self.worlds: Set[str] = set(worlds) if worlds else set()
+        self.agent_relations: Dict[str, Set[Tuple[str, str]]] = (
+            {a: set(rel) for a, rel in agent_relations.items()}
+            if agent_relations
+            else {}
+        )
         self.processed: Set[SignedFormula] = set()
 
     def copy(self) -> "TableauBranch":
-        b = TableauBranch(self.signed_formulas, self.relation, self.worlds)
+        b = TableauBranch(
+            self.signed_formulas, self.relation, self.worlds, self.agent_relations
+        )
         b.processed = set(self.processed)
         return b
 
@@ -165,6 +290,31 @@ class TableauBranch:
         self.worlds.add(u)
         self.worlds.add(v)
         self.relation.add((u, v))
+
+    def add_agent_edge(self, agent_id: str, u: str, v: str) -> None:
+        self.worlds.add(u)
+        self.worlds.add(v)
+        self.agent_relations.setdefault(agent_id, set()).add((u, v))
+
+    def agent_targets(self, agent_id: str, w: str, system: str) -> Set[str]:
+        rel = self.agent_relations.get(agent_id, set())
+        if system in ("T", "S4", "S5"):
+            rel = rel | {(u, u) for u in self.worlds}
+        if system == "S5":
+            rel = rel | {(v, u) for (u, v) in rel}
+        if system in ("S4", "S5", "GL"):
+            changed = True
+            while changed:
+                changed = False
+                to_add = set()
+                for u, v in rel:
+                    for z in self.worlds:
+                        if (v, z) in rel and (u, z) not in rel:
+                            to_add.add((u, z))
+                if to_add:
+                    rel |= to_add
+                    changed = True
+        return {v for (u, v) in rel if u == w}
 
     def add_formula(self, sf: SignedFormula) -> None:
         self.signed_formulas.add(sf)
@@ -225,6 +375,7 @@ class TableauSolver:
         self.world_counter = 0
         self.node_counter = 0
         root_world = "w0"
+        formula = reduce_public_announcement(formula)
 
         # Search for a countermodel: test whether F(formula, root_world) can be satisfied
         root_sf = SignedFormula(sign=False, world=root_world, formula=formula)
@@ -586,6 +737,53 @@ class TableauSolver:
                             branch.add_formula(dia_sf)
                             propagated_any = True
 
+            if sign and isinstance(phi, Knows):
+                a_targets = branch.agent_targets(phi.agent_id, w, self.system)
+                for v in a_targets:
+                    target_sf = SignedFormula(True, v, phi.formula)
+                    if target_sf not in branch.signed_formulas:
+                        branch.add_formula(target_sf)
+                        propagated_any = True
+                    if self.system in ("S4", "S5"):
+                        knows_sf = SignedFormula(True, v, phi)
+                        if knows_sf not in branch.signed_formulas:
+                            branch.add_formula(knows_sf)
+                            propagated_any = True
+
+            if sign and isinstance(phi, CommonKnowledge):
+                if self.system in ("T", "S4", "S5"):
+                    refl_sf = SignedFormula(True, w, phi.formula)
+                    if refl_sf not in branch.signed_formulas:
+                        branch.add_formula(refl_sf)
+                        propagated_any = True
+                for a in phi.agent_group:
+                    k_inner = SignedFormula(True, w, Knows(a, phi.formula))
+                    if k_inner not in branch.signed_formulas:
+                        branch.add_formula(k_inner)
+                        propagated_any = True
+                    for v in branch.agent_targets(a, w, self.system):
+                        c_step = SignedFormula(True, v, phi)
+                        if c_step not in branch.signed_formulas:
+                            branch.add_formula(c_step)
+                            propagated_any = True
+
+            if sign and isinstance(phi, DistributedKnowledge):
+                if self.system in ("T", "S4", "S5") and phi.agent_group:
+                    d_targets = set(branch.agent_targets(phi.agent_group[0], w, self.system))
+                    for a in phi.agent_group[1:]:
+                        d_targets &= branch.agent_targets(a, w, self.system)
+                elif phi.agent_group:
+                    d_targets = set(branch.agent_targets(phi.agent_group[0], w, self.system))
+                    for a in phi.agent_group[1:]:
+                        d_targets &= branch.agent_targets(a, w, self.system)
+                else:
+                    d_targets = set()
+                for v in d_targets:
+                    target_sf = SignedFormula(True, v, phi.formula)
+                    if target_sf not in branch.signed_formulas:
+                        branch.add_formula(target_sf)
+                        propagated_any = True
+
         if propagated_any:
             res_branch, child_proof = self._expand(branch, steps, trace)
             if res_branch is not None:
@@ -599,14 +797,18 @@ class TableauSolver:
             )
             return None, node
 
-        # 4. Apply modal Existential generation (F Box, T Dia) creating a fresh world
+        # 4. Apply modal Existential generation (F Box, T Dia, F Knows, F CommonKnowledge, F DistributedKnowledge) creating a fresh world
         existential_candidate = None
         for sf in branch.signed_formulas:
             if sf in branch.processed:
                 continue
             phi = sf.formula
             sign = sf.sign
-            if (not sign and isinstance(phi, Box)) or (sign and isinstance(phi, Dia)):
+            if (
+                (not sign and isinstance(phi, Box))
+                or (sign and isinstance(phi, Dia))
+                or (not sign and isinstance(phi, (Knows, CommonKnowledge, DistributedKnowledge)))
+            ):
                 existential_candidate = sf
                 break
 
@@ -615,6 +817,69 @@ class TableauSolver:
             w = existential_candidate.world
             phi = existential_candidate.formula
             sign = existential_candidate.sign
+
+            if isinstance(phi, Knows):
+                fresh = self._fresh_world()
+                branch.add_world(fresh)
+                branch.add_agent_edge(phi.agent_id, w, fresh)
+                if self.system == "S5":
+                    branch.add_agent_edge(phi.agent_id, fresh, w)
+                branch.add_formula(SignedFormula(False, fresh, phi.formula))
+                res_branch, child_proof = self._expand(branch, steps, trace)
+                if res_branch is not None:
+                    return res_branch, None
+                node = TableauProofNode(
+                    node_id=self._next_node_id(),
+                    rule="EPISTEMIC_KNOWS_STEP",
+                    description=f"Generated fresh world {fresh} for agent {phi.agent_id} from {w}",
+                    signed_formula=existential_candidate,
+                    children=[child_proof] if child_proof else [],
+                    closed=True,
+                )
+                return None, node
+
+            if isinstance(phi, DistributedKnowledge):
+                fresh = self._fresh_world()
+                branch.add_world(fresh)
+                for a in phi.agent_group:
+                    branch.add_agent_edge(a, w, fresh)
+                    if self.system == "S5":
+                        branch.add_agent_edge(a, fresh, w)
+                branch.add_formula(SignedFormula(False, fresh, phi.formula))
+                res_branch, child_proof = self._expand(branch, steps, trace)
+                if res_branch is not None:
+                    return res_branch, None
+                node = TableauProofNode(
+                    node_id=self._next_node_id(),
+                    rule="EPISTEMIC_DIST_STEP",
+                    description=f"Generated fresh world {fresh} for distributed group {phi.agent_group} from {w}",
+                    signed_formula=existential_candidate,
+                    children=[child_proof] if child_proof else [],
+                    closed=True,
+                )
+                return None, node
+
+            if isinstance(phi, CommonKnowledge):
+                # F(C_G(psi), w): either F(psi, w) (if reflexive) or some agent a in G reaches a world where F(C_G(psi)) or F(psi)
+                fresh = self._fresh_world()
+                branch.add_world(fresh)
+                first_agent = phi.agent_group[0]
+                branch.add_agent_edge(first_agent, w, fresh)
+                if self.system == "S5":
+                    branch.add_agent_edge(first_agent, fresh, w)
+                branch.add_formula(SignedFormula(False, fresh, phi.formula))
+                res_branch, child_proof = self._expand(branch, steps, trace)
+                if res_branch is not None:
+                    return res_branch, None
+                node = TableauProofNode(
+                    node_id=self._next_node_id(),
+                    rule="EPISTEMIC_COMMON_STEP",
+                    description=f"Generated fresh world {fresh} for common knowledge group {phi.agent_group} from {w}",
+                    signed_formula=existential_candidate,
+                    children=[child_proof] if child_proof else [],
+                    closed=True,
+                )
+                return None, node
 
             inner = phi.inner
             target_sign = False if not sign else True

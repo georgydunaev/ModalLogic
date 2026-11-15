@@ -33,6 +33,10 @@ class Formula(ABC):
         """Convert formula to Negation Normal Form."""
         pass
 
+    def to_latex(self) -> str:
+        """Export formula to LaTeX notation."""
+        return str(self)
+
     def __repr__(self) -> str:
         return self.__str__()
 
@@ -170,6 +174,8 @@ class Not(Formula):
         if isinstance(self.inner, Dia):
             # ~<>A = []~A
             return Box(Not(self.inner.inner).to_nnf())
+        if isinstance(self.inner, (Knows, CommonKnowledge, DistributedKnowledge, PublicAnnouncement)):
+            return Not(self.inner.to_nnf())
         raise TypeError(f"Unsupported formula type in Not: {type(self.inner)}")
 
     def __eq__(self, other: Any) -> bool:
@@ -399,6 +405,191 @@ class Dia(Formula):
         return f"<>({self.inner})"
 
 
+class Knows(Formula):
+    """Multi-agent epistemic operator K_i(phi): agent i knows phi."""
+
+    def __init__(self, agent_id: str, formula: Formula):
+        if not isinstance(agent_id, str) or not agent_id:
+            raise ValueError("Agent ID must be a non-empty string")
+        if not isinstance(formula, Formula):
+            raise TypeError("Inner element must be a Formula")
+        self.agent_id = agent_id
+        self.formula = formula
+        self.inner = formula
+
+    def atoms(self) -> Set[str]:
+        return self.formula.atoms()
+
+    def subformulas(self) -> Set[Formula]:
+        return {self} | self.formula.subformulas()
+
+    def complexity(self) -> int:
+        return 1 + self.formula.complexity()
+
+    def to_tuple(self) -> Tuple[Any, ...]:
+        return ("KNOWS", self.agent_id, self.formula.to_tuple())
+
+    def to_nnf(self) -> Formula:
+        return Knows(self.agent_id, self.formula.to_nnf())
+
+    def to_latex(self) -> str:
+        return f"K_{{{self.agent_id}}}({self.formula.to_latex()})"
+
+    def __eq__(self, other: Any) -> bool:
+        return (
+            isinstance(other, Knows)
+            and self.agent_id == other.agent_id
+            and self.formula == other.formula
+        )
+
+    def __hash__(self) -> int:
+        return hash(("KNOWS", self.agent_id, self.formula))
+
+    def __str__(self) -> str:
+        if isinstance(self.formula, (Atom, Top, Bottom)):
+            return f"K_{self.agent_id} {self.formula}"
+        return f"K_{self.agent_id}({self.formula})"
+
+
+class CommonKnowledge(Formula):
+    """Group common knowledge operator C_G(phi): everyone in group G knows phi recursively."""
+
+    def __init__(self, agent_group: Any, formula: Formula):
+        group_tuple = tuple(sorted(str(a) for a in agent_group))
+        if not group_tuple:
+            raise ValueError("Agent group must be non-empty")
+        if not isinstance(formula, Formula):
+            raise TypeError("Inner element must be a Formula")
+        self.agent_group: Tuple[str, ...] = group_tuple
+        self.formula = formula
+        self.inner = formula
+
+    def atoms(self) -> Set[str]:
+        return self.formula.atoms()
+
+    def subformulas(self) -> Set[Formula]:
+        return {self} | self.formula.subformulas()
+
+    def complexity(self) -> int:
+        return 1 + self.formula.complexity()
+
+    def to_tuple(self) -> Tuple[Any, ...]:
+        return ("COMMON_KNOWLEDGE", self.agent_group, self.formula.to_tuple())
+
+    def to_nnf(self) -> Formula:
+        return CommonKnowledge(self.agent_group, self.formula.to_nnf())
+
+    def to_latex(self) -> str:
+        grp = ",".join(self.agent_group)
+        return f"C_{{{grp}}}({self.formula.to_latex()})"
+
+    def __eq__(self, other: Any) -> bool:
+        return (
+            isinstance(other, CommonKnowledge)
+            and self.agent_group == other.agent_group
+            and self.formula == other.formula
+        )
+
+    def __hash__(self) -> int:
+        return hash(("COMMON_KNOWLEDGE", self.agent_group, self.formula))
+
+    def __str__(self) -> str:
+        grp = ",".join(self.agent_group)
+        return f"C_{{{grp}}}({self.formula})"
+
+
+class DistributedKnowledge(Formula):
+    """Group distributed knowledge operator D_G(phi): combined knowledge of group G implies phi."""
+
+    def __init__(self, agent_group: Any, formula: Formula):
+        group_tuple = tuple(sorted(str(a) for a in agent_group))
+        if not group_tuple:
+            raise ValueError("Agent group must be non-empty")
+        if not isinstance(formula, Formula):
+            raise TypeError("Inner element must be a Formula")
+        self.agent_group: Tuple[str, ...] = group_tuple
+        self.formula = formula
+        self.inner = formula
+
+    def atoms(self) -> Set[str]:
+        return self.formula.atoms()
+
+    def subformulas(self) -> Set[Formula]:
+        return {self} | self.formula.subformulas()
+
+    def complexity(self) -> int:
+        return 1 + self.formula.complexity()
+
+    def to_tuple(self) -> Tuple[Any, ...]:
+        return ("DISTRIBUTED_KNOWLEDGE", self.agent_group, self.formula.to_tuple())
+
+    def to_nnf(self) -> Formula:
+        return DistributedKnowledge(self.agent_group, self.formula.to_nnf())
+
+    def to_latex(self) -> str:
+        grp = ",".join(self.agent_group)
+        return f"D_{{{grp}}}({self.formula.to_latex()})"
+
+    def __eq__(self, other: Any) -> bool:
+        return (
+            isinstance(other, DistributedKnowledge)
+            and self.agent_group == other.agent_group
+            and self.formula == other.formula
+        )
+
+    def __hash__(self) -> int:
+        return hash(("DISTRIBUTED_KNOWLEDGE", self.agent_group, self.formula))
+
+    def __str__(self) -> str:
+        grp = ",".join(self.agent_group)
+        return f"D_{{{grp}}}({self.formula})"
+
+
+class PublicAnnouncement(Formula):
+    """Dynamic epistemic public announcement operator [announcement] target_formula."""
+
+    def __init__(self, announcement: Formula, target_formula: Formula):
+        if not isinstance(announcement, Formula) or not isinstance(target_formula, Formula):
+            raise TypeError("Both announcement and target_formula must be Formula instances")
+        self.announcement = announcement
+        self.target_formula = target_formula
+
+    def atoms(self) -> Set[str]:
+        return self.announcement.atoms() | self.target_formula.atoms()
+
+    def subformulas(self) -> Set[Formula]:
+        return {self} | self.announcement.subformulas() | self.target_formula.subformulas()
+
+    def complexity(self) -> int:
+        return 1 + self.announcement.complexity() + self.target_formula.complexity()
+
+    def to_tuple(self) -> Tuple[Any, ...]:
+        return (
+            "PUBLIC_ANNOUNCEMENT",
+            self.announcement.to_tuple(),
+            self.target_formula.to_tuple(),
+        )
+
+    def to_nnf(self) -> Formula:
+        return PublicAnnouncement(self.announcement.to_nnf(), self.target_formula.to_nnf())
+
+    def to_latex(self) -> str:
+        return f"[{self.announcement.to_latex!}]{self.target_formula.to_latex()}" if False else f"[{self.announcement.to_latex()}]{self.target_formula.to_latex()}"
+
+    def __eq__(self, other: Any) -> bool:
+        return (
+            isinstance(other, PublicAnnouncement)
+            and self.announcement == other.announcement
+            and self.target_formula == other.target_formula
+        )
+
+    def __hash__(self) -> int:
+        return hash(("PUBLIC_ANNOUNCEMENT", self.announcement, self.target_formula))
+
+    def __str__(self) -> str:
+        return f"[{self.announcement}] {self.target_formula}"
+
+
 def from_tuple(raw: Tuple[Any, ...]) -> Formula:
     """Convert tuple representation to Formula AST."""
     if not isinstance(raw, tuple) or len(raw) == 0:
@@ -424,6 +615,14 @@ def from_tuple(raw: Tuple[Any, ...]) -> Formula:
         return Box(from_tuple(raw[1]))
     if kind == "DIA":
         return Dia(from_tuple(raw[1]))
+    if kind == "KNOWS":
+        return Knows(raw[1], from_tuple(raw[2]))
+    if kind == "COMMON_KNOWLEDGE":
+        return CommonKnowledge(raw[1], from_tuple(raw[2]))
+    if kind == "DISTRIBUTED_KNOWLEDGE":
+        return DistributedKnowledge(raw[1], from_tuple(raw[2]))
+    if kind == "PUBLIC_ANNOUNCEMENT":
+        return PublicAnnouncement(from_tuple(raw[1]), from_tuple(raw[2]))
     raise ValueError(f"Unknown formula kind: {kind}")
 
 

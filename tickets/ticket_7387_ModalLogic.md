@@ -3,11 +3,15 @@
 **Repository:** `ModalLogic`  
 **Assigned AI Model:** `opencode/nemotron-3.5-lightning-free`  
 **Harness:** `opencode`  
-**Status:** `OPEN` (Pending Autonomous Worker)  
+**Status:** `RESOLVED`  
 **Created:** `2026-10-27T21:35:28Z`  
+**Resolved:** `2026-11-15T07:27:00Z`  
 
 ## Task Description
 Formalize and test bisimulation invariance theorems between Kripke models.
+
+## Resolution Summary
+- Verified bisimulation relations, maximal bisimulation computation, and Hennessy-Milner modal invariance in `modallogic/bisimulation.py` and `tests/test_bisimulation.py`.
 
 ## Execution Guidelines
 1. Work autonomously in `ModalLogic/`.
