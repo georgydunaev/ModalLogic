@@ -574,7 +574,7 @@ class PublicAnnouncement(Formula):
         return PublicAnnouncement(self.announcement.to_nnf(), self.target_formula.to_nnf())
 
     def to_latex(self) -> str:
-        return f"[{self.announcement.to_latex!}]{self.target_formula.to_latex()}" if False else f"[{self.announcement.to_latex()}]{self.target_formula.to_latex()}"
+        return f"[{self.announcement.to_latex()}]{self.target_formula.to_latex()}"
 
     def __eq__(self, other: Any) -> bool:
         return (
